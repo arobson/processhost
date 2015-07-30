@@ -17,21 +17,25 @@ module.exports = function() {
 	var ProcessHost = function() {
 		var shutdown;
 		this.processes = {};
+		var host = this;
 
-		shutdown = function() {
-			shutdown = function() {};
-			this.stop();
-			process.exit( 0 );
-		}.bind( this );
+		function onShutdown( exitCode ) {
+			if( !shutdown ) {
+				shutdown = true;
+				host.stop();
+				host.removeListeners();
+				process.exit( exitCode || 0 );
+			}
+		}
 
-		process.on( "SIGINT", shutdown );
-		process.on( "SIGTERM", shutdown );
-		process.on( "exit", shutdown );
+		process.on( "SIGINT", onShutdown );
+		process.on( "SIGTERM", onShutdown );
+		process.on( "exit", onShutdown );
 
 		this.removeListeners = function() {
-			process.removeListener( "SIGINT", shutdown );
-			process.removeListener( "SIGTERM", shutdown );
-			process.removeListener( "exit", shutdown );
+			process.removeAllListeners( "SIGINT", onShutdown );
+			process.removeAllListeners( "SIGTERM", onShutdown );
+			process.removeAllListeners( "exit", onShutdown );
 		};
 
 		_.bindAll( this );
