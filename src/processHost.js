@@ -8,7 +8,7 @@
 var _ = require( "lodash" );
 var when = require( "when" );
 var Monologue = require( "monologue.js" );
-var spawn = require( "win-spawn" );
+var spawn = require( "cross-spawn" );
 var Process = require( "./process.js" )( spawn );
 var debug = require( "debug" )( "processhost:host" );
 

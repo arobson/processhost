@@ -7,5 +7,4 @@ global._ = require( 'lodash' );
 global.fs = require( 'fs' );
 global.sinon = require( 'sinon' );
 global.when = require( 'when' );
-require( 'sinon-as-promised' );
 global.proxyquire = require( 'proxyquire' ).noPreserveCache();

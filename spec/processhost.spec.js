@@ -114,7 +114,7 @@ describe( "ProcessHost API", function() {
 			var restarts = 0;
 			var total = 1;
 			before( function( done ) {
-				host.once( "timer3b.restarting", function() {
+				host.once( "timer3b.started", function() {
 					restarts++;
 					done();
 				} );

@@ -6,7 +6,7 @@ describe( "Live Process Control", function() {
 	var stdoutData = false;
 	var spawn;
 	before( function( done ) {
-		spawn = require( "win-spawn" );
+		spawn = require( "cross-spawn" );
 		var Process = require( "../src/process.js" )( spawn );
 		child = new Process( "timer2", {
 			cwd: "./spec",
