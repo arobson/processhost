@@ -31,11 +31,11 @@ function countCrash (fsm, restartLimit, restartWindow) {
 }
 
 function reportState (fsm) {
-  debug("Process '%s' entering '%s' state", fsm.id, fsm.state)
+  debug("Process '%s' entering '%s' state", fsm.id, fsm.currentState)
 }
 
-function startProcess (spawn, config, id) {
-  debug("Starting process '%s'", id)
+function _startProcess (spawn, config, id) {
+  debug("Starting process '%s'", config.command, config.args)
   return spawn(
     config.command,
     config.args,
@@ -43,7 +43,8 @@ function startProcess (spawn, config, id) {
       cwd: config.cwd || process.cwd(),
       stdio: config.stdio || 'inherit',
       env: config.env || process.env
-    })
+    }
+  )
 }
 
 function stopProcess (handle, signals, id) {
@@ -72,8 +73,8 @@ module.exports = function (spawn) {
         },
 
         attachToIO: function (stream) {
-          if (this.handle[stream]) {
-            this.handle[stream].on('data', function (data) {
+          if (this.processHandle[stream]) {
+            this.processHandle[stream].on('data', function (data) {
               this.dispatch(stream, { id: this.id, data: data })
             })
           }
@@ -82,9 +83,7 @@ module.exports = function (spawn) {
         start: function () {
           this.exits = 0
           var {promise, resolve, reject} = _.future()
-          this.once('started', function () {
-            console.log('IT SAID STARTED AHHHHHHHH')
-          })
+          this.once('started', () => resolve(this))
           this.once('failed', reject)
           this.handle('start', {})
           return promise
@@ -93,7 +92,7 @@ module.exports = function (spawn) {
         startProcess: function () {
           const config = this.config
           this.next('starting')
-          this.processHandle = startProcess(spawn, config, this.id)
+          this.processHandle = _startProcess(spawn, config, this.id)
           this.attachToIO('stderr')
           this.attachToIO('stdout')
   

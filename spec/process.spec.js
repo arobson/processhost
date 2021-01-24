@@ -9,26 +9,26 @@ describe('Live Process Control', function () {
     spawn = require('cross-spawn')
     const Process = require('../src/process.js')(spawn)
     child = new Process('timer2', {
-      cwd: './spec',
-      command: 'node',
-      args: ['timer.js'],
-      stdio: 'pipe'
-	})
+        cwd: './spec',
+        command: 'node',
+        args: ['timer.js'],
+        stdio: 'pipe'
+    })
 
     // although you can attach *before* start
     // written this way to test attaching after
     // to assert that use of nextTick delays start
     // long enough for the listener to catch "started"
 	
-	child.on('#', t => console.log(t))
+    child.on('#', t => console.log(t))
     child.once('started', function () {
       handleEvent = true
     })
-    child.once('stdout', function () {
+    child.once('stdout', function (x, y) {
+      console.log('stdout', x, y)
       stdoutData = true
-      
-	})
-	return child.start()
+    })
+	  return child.start()
   })
 
   it('should capture started event from handle', function () {
@@ -40,8 +40,8 @@ describe('Live Process Control', function () {
   })
 
   after(function () {
-	child.stop()
-	child.cleanup()
+    child.stop()
+    child.cleanup()
   })
 })
 
