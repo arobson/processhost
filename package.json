@@ -13,13 +13,10 @@
   "dependencies": {
     "cross-spawn": "^7.0.3",
     "debug": "^2.2.0",
-    "fauxdash": "^1.4.0",
-    "lodash": "3.x",
-    "machina": "^1.0.0",
-    "minimatch": "^2.0.7",
-    "monologue.js": "~0.3.3",
+    "fauxdash": "^1.7.0",
+    "mfsm": "^1.1.0",
     "proxyquire": "^2.1.3",
-    "when": "3.x"
+    "topic-dispatch": "^1.1.2"
   },
   "devDependencies": {
     "chai": "^4.2.0",
@@ -39,6 +36,8 @@
       "mocha"
     ],
     "globals": [
+      "_",
+      "should",
       "sinon",
       "expect"
     ]
@@ -49,7 +48,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "./node_modules/mocha/bin/mocha --spec ./spec/**/*.spec.js"
+    "test": "./node_modules/mocha/bin/mocha --spec ./spec/**/*.spec.js",
+    "release": "standard-version"
   },
   "licenses": [
     {

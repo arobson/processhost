@@ -1,265 +1,270 @@
-require( "./setup" );
+require('./setup')
 
-describe( "Live Process Control", function() {
-	var child;
-	var handleEvent = false;
-	var stdoutData = false;
-	var spawn;
-	before( function( done ) {
-		spawn = require( "cross-spawn" );
-		var Process = require( "../src/process.js" )( spawn );
-		child = new Process( "timer2", {
-			cwd: "./spec",
-			command: "node",
-			args: [ "timer.js" ],
-			stdio: "pipe"
-		} );
+describe('Live Process Control', function () {
+  let child
+  let handleEvent = false
+  let stdoutData = false
+  let spawn
+  before(function () {
+    spawn = require('cross-spawn')
+    const Process = require('../src/process.js')(spawn)
+    child = new Process('timer2', {
+      cwd: './spec',
+      command: 'node',
+      args: ['timer.js'],
+      stdio: 'pipe'
+	})
 
-		// although you can attach *before* start
-		// written this way to test attaching after
-		// to assert that use of nextTick delays start
-		// long enough for the listener to catch "started"
-		child.start();
-		child.once( "started", function() {
-			handleEvent = true;
-		} );
-		child.once( "stdout", function() {
-			stdoutData = true;
-			done();
-		} );
-	} );
+    // although you can attach *before* start
+    // written this way to test attaching after
+    // to assert that use of nextTick delays start
+    // long enough for the listener to catch "started"
+	
+	child.on('#', t => console.log(t))
+    child.once('started', function () {
+      handleEvent = true
+    })
+    child.once('stdout', function () {
+      stdoutData = true
+      
+	})
+	return child.start()
+  })
 
-	it( "should capture started event from handle", function() {
-		handleEvent.should.be.true; // jshint ignore:line
-	} );
+  it('should capture started event from handle', function () {
+    handleEvent.should.equal(true)
+  })
 
-	it( "should have captured stdout data", function() {
-		stdoutData.should.be.true; // jshint ignore:line
-	} );
+  it('should have captured stdout data', function () {
+    stdoutData.should.equal(true)
+  })
 
-	after( function() {
-		child.stop();
-	} );
-} );
+  after(function () {
+	child.stop()
+	child.cleanup()
+  })
+})
 
-describe( "Process transitions", function() {
+describe('Process transitions', function () {
+  let child
+  describe('with stubbed spawn', function () {
+    let spawn
+    let onSpawn
+    const handle = {
+      handles: {},
+      off: function (ev) {
+        delete this.handles[ev]
+      },
+      on: function (ev, handler) {
+        this.handles[ev] = handler
+      },
+      raise: function (ev, one, two, three) {
+        if (this.handles[ev]) {
+          this.handles[ev](one, two, three)
+        }
+      },
+      removeAllListeners: function () {
+        this.handles = {}
+      },
+      kill: function () {
+        process.nextTick(function () {
+          this.raise('exit', 0, '')
+        }.bind(this))
+      },
+      crash: function () {
+        process.nextTick(function () {
+          this.raise('exit', 100, '')
+        }.bind(this))
+      }
+    }
+    _.bindAll(handle)
 
-	var child;
-	describe( "with stubbed spawn", function() {
-		var spawn;
-		var onSpawn;
-		var handle = {
-			handles: {},
-			off: function( ev ) {
-				delete this.handles[ ev ];
-			},
-			on: function( ev, handler ) {
-				this.handles[ ev ] = handler;
-			},
-			raise: function( ev, one, two, three ) {
-				if ( this.handles[ ev ] ) {
-					this.handles[ ev ]( one, two, three );
-				}
-			},
-			removeAllListeners: function() {
-				this.handles = {};
-			},
-			kill: function() {
-				process.nextTick( function() {
-					this.raise( "exit", 0, "" );
-				}.bind( this ) );
-			},
-			crash: function() {
-				process.nextTick( function() {
-					this.raise( "exit", 100, "" );
-				}.bind( this ) );
-			}
-		};
-		_.bindAll( handle );
+    before(function (done) {
+      spawn = function () {
+        if (onSpawn) {
+          process.nextTick(function () {
+            onSpawn()
+          })
+        }
+        return handle
+      }
+      const Process = require('../src/process.js')(spawn)
+      child = new Process('test', {
+        command: 'node',
+        args: ['node'],
+        restartLimit: 10,
+        restartWindow: 1000
+      })
+      child.start()
+        .then(function () {
+          done()
+        })
+    })
 
-		before( function( done ) {
-			spawn = function() {
-				if ( onSpawn ) {
-					process.nextTick( function() {
-						onSpawn();
-					} );
-				}
-				return handle;
-			};
-			var Process = require( "../src/process.js" )( spawn );
-			child = new Process( "test", {
-				command: "node",
-				args: [ "node" ],
-				restartLimit: 10,
-				restartWindow: 1000
-			} );
-			child.start()
-				.then( function() {
-					done();
-				} );
-		} );
+    it('should be in the started state', function () {
+      child.state.should.equal('started')
+    })
 
-		it( "should be in the started state", function() {
-			child.state.should.equal( "started" );
-		} );
+    describe('when restarting a user restart-able process', function () {
+      let transitionalState
 
-		describe( "when restarting a user restart-able process", function() {
-			var transitionalState;
+      before(function (done) {
+        child.once('restarting', function () {
+          transitionalState = child.state
+        })
 
-			before( function( done ) {
-				child.once( "restarting", function() {
-					transitionalState = child.state;
-				} );
+        child
+          .start()
+          .then(function () {
+            done()
+          })
+      })
 
-				child
-					.start()
-					.then( function() {
-						done();
-					} );
-			} );
+      it('should restart the process (stop and start)', function () {
+        transitionalState.should.equal('restarting')
+      })
 
-			it( "should restart the process (stop and start)", function() {
-				transitionalState.should.equal( "restarting" );
-			} );
+      it('should resolve to a started state', function () {
+        child.state.should.equal('started')
+      })
 
-			it( "should resolve to a started state", function() {
-				child.state.should.equal( "started" );
-			} );
+      it('should not increment exits', function () {
+        child.exits.should.equal(0)
+      })
+    })
 
-			it( "should not increment exits", function() {
-				child.exits.should.equal( 0 );
-			} );
-		} );
+    describe('when calling restart on an un-restart-able process', function () {
+      let transitionalState
 
-		describe( "when calling restart on an un-restart-able process", function() {
-			var transitionalState;
+      before(function (done) {
+        child.config.restart = false
+        child.once('restarting', function () {
+          transitionalState = child.state
+        })
 
-			before( function( done ) {
-				child.config.restart = false;
-				child.once( "restarting", function() {
-					transitionalState = child.state;
-				} );
+        child
+          .start()
+          .then(function () {
+            done()
+          })
+      })
 
-				child
-					.start()
-					.then( function() {
-						done();
-					} );
-			} );
+      it('should not restart the process', function () {
+        should.not.exist(transitionalState)
+      })
 
-			it( "should not restart the process", function() {
-				should.not.exist( transitionalState );
-			} );
+      it('should stay in started', function () {
+        child.state.should.equal('started')
+      })
 
-			it( "should stay in started", function() {
-				child.state.should.equal( "started" );
-			} );
+      it('should not increment exits', function () {
+        child.exits.should.equal(0)
+      })
+    })
 
-			it( "should not increment exits", function() {
-				child.exits.should.equal( 0 );
-			} );
-		} );
+    describe('when calling stop on a started process', function () {
+      before(function (done) {
+        child.once('exit', function () {
+          done()
+        })
+        child.stop()
+      })
 
-		describe( "when calling stop on a started process", function() {
+      it('should resolve to a stopped state', function () {
+        child.state.should.equal('stopped')
+      })
 
-			before( function( done ) {
-				child.once( "exit", function() {
-					done();
-				} );
-				child.stop();
-			} );
+      it('should not increment exits', function () {
+        child.exits.should.equal(0)
+      })
 
-			it( "should resolve to a stopped state", function() {
-				child.state.should.equal( "stopped" );
-			} );
+      after(function (done) {
+        child.once('started', function () {
+          done()
+        })
+        child.start()
+      })
+    })
 
-			it( "should not increment exits", function() {
-				child.exits.should.equal( 0 );
-			} );
+    describe('when a process crashes', function () {
+      let exit
+      before(function (done) {
+        child.once('crashed', function (details) {
+          done()
+          exit = details
+        })
+        handle.crash()
+      })
 
-			after( function( done ) {
-				child.once( "started", function() {
-					done();
-				} );
-				child.start();
-			} );
-		} );
+      it('should have emitted a crash event', function () {
+        exit.should.eql({ id: 'test', data: { code: 100, signal: '' } })
+      })
 
-		describe( "when a process crashes", function() {
-			var exit;
-			before( function( done ) {
-				child.once( "crashed", function( details ) {
-					done();
-					exit = details;
-				} );
-				handle.crash();
-			} );
+      it('should increment exits', function () {
+        child.exits.should.equal(1)
+      })
 
-			it( "should have emitted a crash event", function() {
-				exit.should.eql( { id: "test", data: { code: 100, signal: "" } } );
-			} );
+      it('should restart', function () {
+        child.state.should.equal('started')
+      })
 
-			it( "should increment exits", function() {
-				child.exits.should.equal( 1 );
-			} );
+      after(function (done) {
+        child.once('started', function () {
+          done()
+        })
+        child.start()
+      })
+    })
 
-			it( "should restart", function() {
-				child.state.should.equal( "started" );
-			} );
+    describe('when a process crashes during restart', function () {
+      before(function (done) {
+        onSpawn = function () {
+          handle.crash()
+        }
 
-			after( function( done ) {
-				child.once( "started", function() {
-					done();
-				} );
-				child.start();
-			} );
-		} );
+        child.once('started', function () {
+          done()
+        })
 
-		describe( "when a process crashes during restart", function() {
-			before( function( done ) {
-				onSpawn = function() {
-					handle.crash();
-				};
+        child.start()
+      })
 
-				child.once( "started", function() {
-					done();
-				} );
+      it('should resolve to a started state', function () {
+        child.state.should.equal('started')
+      })
 
-				child.start();
-			} );
+      it('should increment exits', function () {
+        child.exits.should.equal(0)
+      })
 
-			it( "should resolve to a started state", function() {
-				child.state.should.equal( "started" );
-			} );
+      after(function (done) {
+        onSpawn = undefined
+        child.start()
+          .then(function () {
+            done()
+          })
+      })
+    })
 
-			it( "should increment exits", function() {
-				child.exits.should.equal( 0 );
-			} );
+    describe('when stopping a process', function () {
+      before(function (done) {
+        child.once('stopped', function () {
+          done()
+        })
+        child.stop()
+      })
 
-			after( function( done ) {
-				onSpawn = undefined;
-				child.start()
-					.then( function() {
-						done();
-					} );
-			} );
-		} );
+      it('should not increment exits', function () {
+        child.exits.should.equal(0)
+      })
 
-		describe( "when stopping a process", function() {
-			before( function( done ) {
-				child.once( "stopped", function() {
-					done();
-				} );
-				child.stop();
-			} );
-
-			it( "should not increment exits", function() {
-				child.exits.should.equal( 0 );
-			} );
-
-			it( "should end in a stopped state", function() {
-				child.state.should.equal( "stopped" );
-			} );
-		} );
-	} );
-} );
+      it('should end in a stopped state', function () {
+        child.state.should.equal('stopped')
+	  })
+	  
+	  after(function() {
+		child.cleanup()
+	  })
+	})
+  })
+})
