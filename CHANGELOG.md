@@ -1,3 +1,8 @@
+## 1.0.0
+
+ * Rewrite with new dependencies to remove security audit issues
+ * Switch to standard (code style) and standard-version (release tool)
+
 ## 0.2.x
 
 ### 0.2.3
