@@ -9,34 +9,24 @@ const _ = require('fauxdash')
 const fsm = require('mfsm')
 const debug = require('debug')('processhost:process')
 
-// increments the count and after it would pass out of
-// the restart window, decrements exits
-function countCrash (fsm, restartLimit, restartWindow) {
-  if (restartWindow > 0) {
-    fsm.exits++
-    setTimeout(function () {
-      if (fsm.exits > 0) {
-        fsm.exits--
-      }
-    }, restartWindow)
-  }
-  debug("Process '%s' crashed with '%d' - restart limit was set at '%d' within '%d'",
-    fsm.id, fsm.exits, restartLimit, restartWindow)
-  if (restartLimit === undefined || fsm.exits <= restartLimit) {
-    debug("Restarting crashed process, '%s'", fsm.id)
-    fsm.handle('start', {})
-  } else {
-    fsm.handle('failed', {})
+function attachToIO (stream) {
+  if (this.processHandle[stream]) {
+    var events = [ 'data' ]
+    _.each(events, (ev) => {
+      this.processHandle[stream].on(ev, (data) => {
+        this.emit(stream, { id: this.id, data: data.toString() })
+      })
+    })
   }
 }
 
-function reportState (fsm) {
-  debug("Process '%s' entering '%s' state", fsm.id, fsm.currentState)
+function crash (data) {
+  this.next('crashed')
+  this.onCrash()
 }
 
-function _startProcess (spawn, config, id) {
-  debug("Starting process '%s'", config.command, config.args)
-  return spawn(
+function createProcess (config, id) {
+  return this.spawn(
     config.command,
     config.args,
     {
@@ -47,15 +37,16 @@ function _startProcess (spawn, config, id) {
   )
 }
 
-function stopProcess (handle, signals, id) {
+function killProcess () {
+  var signals = this.config.killSignal
   if (_.isString(signals) || _.isEmpty(signals)) {
     signals = [signals || 'SIGTERM']
   }
-  debug("Killing process '%s'", id)
-  _.each(signals, function (signal) {
-    if (handle) {
+  debug("Killing process '%s'", this.id)
+  _.each(signals, (signal) => {
+    if (this.processHandle) {
       try {
-        handle.kill(signal)
+        this.processHandle.kill(signal)
       } catch (err) {
         debug('Error attempting to send', signal, 'to process', handle.pid, err)
       }
@@ -63,68 +54,105 @@ function stopProcess (handle, signals, id) {
   })
 }
 
+// increments the count and after it would pass out of
+// the restart window, decrements exits
+function onCrash () {
+  var restartLimit = this.config.restartLimit
+  var restartWindow = this.config.restartWindow
+  if (restartWindow > 0) {
+    this.exits++
+    setTimeout(function () {
+      if (this.exits > 0) {
+        this.exits = 1
+      }
+    }, restartWindow)
+  }
+  debug("Process '%s' crashed in state '%s' with '%d' - restart limit was set at '%d' within '%d'",
+    this.id, this.previousState, this.exits, restartLimit, restartWindow)
+  if (restartLimit === undefined || this.exits <= restartLimit) {
+    debug("Restarting crashed process, '%s'", this.id)
+    this.handle('start')
+  } else {
+    this.handle('failed', {})
+  }
+}
+
+function onExit (code, signal) {
+  debug("Process '%s' exited with code %d", this.id, code)
+  if (this.processHandle) {
+    this.processHandle.removeAllListeners()
+  }
+  var msg = { id: this.id, data: { code, signal } }
+  this.emit('exited', msg)
+  this.handle('processExit', msg.data)
+}
+
+function reportState (fsm) {
+  debug("Process '%s' entering '%s' state", fsm.id, fsm.currentState)
+}
+
+function start () {
+  this.exits = 0
+  var {promise, resolve, reject} = _.future()
+  this.once('started', () => {
+    resolve(this)
+  })
+  this.once('failed', (e) => {
+    reject(e)
+  })
+  this.handle('start', {})
+  return promise
+}
+
+function startProcess () {
+  const config = this.config
+  debug("Starting process '%s'", config.command, config.args)
+  this.processHandle = this.createProcess(config, this.id)
+  this.attachToIO('stderr')
+  this.attachToIO('stdout')
+  if(/starting/.test(this.currentState)) {
+    debug("Process '%s' spawned successfully", this.id)
+    this.handle('processSpawned', {})
+  }
+  this.processHandle.on('exit', this.onExit)
+}
+
+function stop () {
+  var {promise, resolve, reject} = _.future()
+  this.once('stopped', () => resolve())
+  process.nextTick(() => {
+    this.next('stopping')
+    this.killProcess()
+  })
+  return promise
+}
+
+function writeTo (data) {
+  if (this.processHandle && this.processHandle.stdin) {
+    this.processHandle.stdin.write(data)
+  }
+}
+
 module.exports = function (spawn) {
   return function (id, config) {
     return fsm({
       api: {
-        crash: function (data) {
-          this.next('crashed')
-          countCrash(this, this.config.restartLimit, this.config.restartWindow)
-        },
-
-        attachToIO: function (stream) {
-          if (this.processHandle[stream]) {
-            this.processHandle[stream].on('data', function (data) {
-              this.dispatch(stream, { id: this.id, data: data })
-            })
-          }
-        },
-        
-        start: function () {
-          this.exits = 0
-          var {promise, resolve, reject} = _.future()
-          this.once('started', () => resolve(this))
-          this.once('failed', reject)
-          this.handle('start', {})
-          return promise
-        },
-
-        startProcess: function () {
-          const config = this.config
-          this.next('starting')
-          this.processHandle = _startProcess(spawn, config, this.id)
-          this.attachToIO('stderr')
-          this.attachToIO('stdout')
-  
-          this.processHandle.on('exit', (code, signal) => {
-            debug("Process '%s' exited with code %d", this.id, code)
-            this.handle('processExit', { code: code, signal: signal })
-          })
-          this.next('started')
-        },
-
-        stop: function() {
-          process.nextTick(() => {
-            this.handle('stop', {})
-          })
-        },
-
-        stopProcess: function () {
-          if (this.processHandle) {
-            stopProcess(this.processHandle, this.config.killSignal, this.id)
-          }
-        },
-
-        write: function (data) {
-          if (this.processHandle && this.processHandle.stdin) {
-            this.processHandle.stdin.write(data)
-          }
-        }
+        attachToIO,
+        crash,
+        createProcess,
+        killProcess,
+        onCrash,
+        onExit,
+        start,
+        startProcess,
+        stop,
+        write: writeTo
       },
 
       init: {
         id,
         config,
+        spawn,
         exits: 0,
         default: 'uninitialized',
         restart: !_.has(config, 'restart') ? true : false
@@ -133,33 +161,36 @@ module.exports = function (spawn) {
       states: {
         uninitialized: {
           onEntry: function() {
-            console.log('wtaf')
+            reportState(this)
           },
           start: function () {
-            console.log('what up?')
+            this.next('starting')
             this.startProcess()
           }
         },
         crashed: {
           onEntry: function () {
-            debug("Process '%s' crashed in state %s", this.id, this.previousState)
-            if (this.processHandle) {
-              this.processHandle.removeAllListeners()
-            }
+            reportState(this)
           },
           start: function () {
+            this.next('restarting')
             this.startProcess()
           },
           failed: function () {
-            this.dispatch('failed', { id: this.id })
+            this.emit('failed', { id: this.id })
           }
         },
         restarting: {
           onEntry: function () {
             reportState(this)
           },
+          start: { deferUntil : 'started' },
+          stop: { deferUntil : 'started' },
           processExit: function (data) {
-            this.startProcess()
+            process.nextTick(() => this.startProcess())
+          },
+          processSpawned: function() {
+            this.next('started')
           }
         },
         starting: {
@@ -170,6 +201,9 @@ module.exports = function (spawn) {
           stop: { deferUntil : 'started' },
           processExit: function (data) {
             this.crash(data)
+          },
+          processSpawned: function() {
+            this.next('started')
           }
         },
         started: {
@@ -177,17 +211,20 @@ module.exports = function (spawn) {
             reportState(this)
           },
           start: function () {
-            if (this.config.restart && this.previousState !== 'starting') {
+            if (this.config.restart) {
               debug("Process '%s' is being restarted", this.id)
-              this.next('restarting')
-              this.stopProcess()
+              this.stop()
+                  .then(() => {
+                    this.next('restarting')
+                    this.startProcess()
+                  })
             } else {
-              this.dispatch('started', { id: this.id })
+              this.emit('started', { id: this.id })
             }
           },
           stop: function () {
             this.next('stopping')
-            this.stopProcess()
+            this.stop()
           },
           processExit: function (data) {
             this.crash(data)
@@ -199,7 +236,6 @@ module.exports = function (spawn) {
           },
           processExit: function (data) {
             debug("Process '%s' exited", this.id)
-            this.dispatch('exit', { id: this.id, data: data })
             this.next('stopped')
           }
         },
@@ -209,6 +245,7 @@ module.exports = function (spawn) {
           },
           start: function () {
             this.exits = 0
+            this.next('starting')
             this.startProcess()
           }
         }

@@ -51,9 +51,8 @@ module.exports = function () {
       if (!process || config) {
         process = Process(id, config)
         this.processes[id] = process
-
-        process.on('#', (data, envelope) => {
-          this.dispatch(data.id + '.' + envelope.topic, data)
+        process.on('#', (topic, data) => {
+          this.emit(data.id + '.' + topic, data)
         })
       }
       resolve(process)
@@ -73,8 +72,8 @@ module.exports = function () {
 
   ProcessHost.prototype.setup = function (hash) {
     const promises = _.map(hash, (config, id) => {
-      const call = config.start ? this.start : this.create
-      return call(id, config)
+      const fn = config.start ? this.start : this.create
+      return fn.call(this, id, config)
     })
     return Promise.all(promises)
   }
@@ -82,25 +81,24 @@ module.exports = function () {
   ProcessHost.prototype.start = function (id, config) {
     if (!id) {
       throw new Error('Cannot call start without an identifier.')
-	}
-	console.log(this.processes)
-    const process = id ? this.processes[id] : undefined
-    if (!process && !config) {
+    }
+    const child = id ? this.processes[id] : undefined
+    if (!child && !config) {
       throw new Error("Cannot call start on non-existent '" + id + "' without configuration.")
     }
-    if (process && /start/.test(process.state) && config) {
+    if (child && /start/.test(child.currentState) && config) {
       return new Promise((resolve, reject) => {
-        process.once('exit', () => {
-          process.off('#')
+        child.once('stopped', () => {
+          child.cleanup()
           this.createAndStart(id, config)
             .then(resolve, reject)
         })
-        process.stop()
+        child.stop()
       })
     } else if (config) {
       return this.createAndStart(id, config)
-    } else if (process) {
-      return process.start()
+    } else if (child) {
+      return child.start()
     }
   }
 
@@ -108,12 +106,12 @@ module.exports = function () {
     if (id) {
       const process = id ? this.processes[id] : undefined
       if (process) {
-        process.stop()
+        return process.stop()
       }
     } else {
-      _.each(this.processes, function (process) {
+      return Promise.all(_.map(this.processes, (process) => {
         process.stop()
-      })
+      }))
     }
   }
 

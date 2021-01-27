@@ -41,17 +41,20 @@ describe('ProcessHost API', function () {
 
     describe("when redefining a process with 'start'", function () {
       let stdout
-      before(function (done) {
-        host.start('timer1', {
+      before(function () {
+        this.timeout(5000)
+        return host.start('timer1', {
           cwd: './spec',
           command: 'node',
           args: ['timer2.js'],
           stdio: 'pipe'
-        }).then(function () {
-          host.once('timer1.stdout', function (line) {
-            stdout = line.data.toString()
-            done()
+        }).then(() => {
+          var { promise, resolve, reject } = _.future()
+          host.on('timer1.stdout', (t, l) => {
+            stdout = l.data
+            resolve()
           })
+          return promise
         })
       })
 
@@ -62,7 +65,7 @@ describe('ProcessHost API', function () {
 
     after(function (done) {
       host.removeListeners()
-      host.once('timer1.stopped', function () {
+      host.on('timer1.stopped', function (t, d) {
         done()
       })
       host.stop('timer1')
@@ -80,21 +83,24 @@ describe('ProcessHost API', function () {
           command: 'node',
           args: ['timer.js'],
           stdio: 'pipe',
-          start: true
+          start: true,
+          restart: true
         },
         timer3b: {
           cwd: './spec',
           command: 'node',
           args: ['timer.js'],
           stdio: 'pipe',
-          start: true
+          start: true,
+          restart: true
         },
         timer3c: {
           cwd: './spec',
           command: 'node',
           args: ['timer.js'],
           stdio: 'pipe',
-          start: true
+          start: true,
+          restart: true
         }
       }).then(function (handles) {
         done()
@@ -102,13 +108,13 @@ describe('ProcessHost API', function () {
     })
 
     it('should create all three processes', function () {
-      _.keys(host.processes).should.eql(['timer3a', 'timer3b', 'timer3c'])
+      Object.keys(host.processes).should.eql(['timer3a', 'timer3b', 'timer3c'])
     })
 
     it('should start all three processes', function () {
-      _.all(_.values(host.processes), function (process) {
-        return process.state === 'started'
-      })
+      _.reduce(_.values(host.processes), (all, process) => {
+        return all && process.state === 'started'
+      }, true)
     })
 
     describe("when restarting specific process with 'start'", function () {
@@ -127,9 +133,9 @@ describe('ProcessHost API', function () {
       })
 
       it('should result in all processes in started state', function () {
-        _.all(_.values(host.processes), function (process) {
-          return process.state === 'started'
-        })
+        _.reduce(_.values(host.processes), (all, process) => {
+          return all && process.state === 'started'
+        }, false)
       })
     })
 
@@ -137,8 +143,8 @@ describe('ProcessHost API', function () {
       let restarts = 0
       let total = 0
       before(function (done) {
-        total = _.keys(host.processes).length
-        host.on('#.restarting', function () {
+        total = Object.keys(host.processes).length
+        host.on('#.restarting', function (t) {
           restarts++
           if (restarts === total) {
             done()
@@ -152,9 +158,9 @@ describe('ProcessHost API', function () {
       })
 
       it('should result in all processes in started state', function () {
-        _.all(_.values(host.processes), function (process) {
-          return process.state === 'started'
-        })
+        _.reduce(_.values(host.processes), (all, process) => {
+          return all && process.state === 'started'
+        }, true)
       })
     })
 
@@ -176,7 +182,7 @@ describe('ProcessHost API', function () {
 
     after(function () {
       host.removeListeners()
-      host.stop()
+      return host.stop()
     })
   })
 

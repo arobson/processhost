@@ -1,11 +1,11 @@
 # processhost
-Super simple, cross-platform process hosting for Node, adapted from [Anvil]'s(https://github.com/anviljs/anvil.js) processhost.
+Simple, cross-platform, process hosting for Node, adapted from [Anvil]'s(https://github.com/anviljs/anvil.js) processhost.
 
 The most useful features are:
 
- * Reliably kills child processes on process exit
- * Reliably restarts child processes
- * Apply a tolerance to restart behavior
+ * Reliably kills child processes on host process exit
+ * Reliably restarts crashed child processes
+ * Apply limits to restart behavior
 
 ## API
 
@@ -34,7 +34,7 @@ Configuration hash has the following options. Only command and args are required
 
 > 1. `restartWindow` defaults to undefined - this results in limitless restarts
 
-> 2. `stdio` defaults to "inherit" causing child processes to share the parents stdio/stderr
+> 2. `stdio` defaults to "inherit" causing child processes to share the parents stdout/stderr
 
 ### create( processAlias, configuration )
 Creates a new process without starting it.
@@ -93,4 +93,4 @@ You can subscribe to the following process level events off the process host.
 
 > Note
 
-> The `stderr` and `stdout` events will not fire unless you set `stdio` to "pipe" in the config hash.
+> The `stderr` and `stdout` events cannot fire unless you set `stdio` to "pipe" in the config hash.

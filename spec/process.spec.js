@@ -5,7 +5,7 @@ describe('Live Process Control', function () {
   let handleEvent = false
   let stdoutData = false
   let spawn
-  before(function () {
+  before(function (done) {
     spawn = require('cross-spawn')
     const Process = require('../src/process.js')(spawn)
     child = new Process('timer2', {
@@ -19,16 +19,14 @@ describe('Live Process Control', function () {
     // written this way to test attaching after
     // to assert that use of nextTick delays start
     // long enough for the listener to catch "started"
-	
-    child.on('#', t => console.log(t))
+    child.once('stdout', () => {
+      stdoutData = true
+      done()
+    })
     child.once('started', function () {
       handleEvent = true
     })
-    child.once('stdout', function (x, y) {
-      console.log('stdout', x, y)
-      stdoutData = true
-    })
-	  return child.start()
+	  child.start()
   })
 
   it('should capture started event from handle', function () {
@@ -67,14 +65,14 @@ describe('Process transitions', function () {
         this.handles = {}
       },
       kill: function () {
-        process.nextTick(function () {
+        process.nextTick(() => {
           this.raise('exit', 0, '')
-        }.bind(this))
+        })
       },
       crash: function () {
-        process.nextTick(function () {
+        process.nextTick(() => {
           this.raise('exit', 100, '')
-        }.bind(this))
+        })
       }
     }
     _.bindAll(handle)
@@ -102,7 +100,7 @@ describe('Process transitions', function () {
     })
 
     it('should be in the started state', function () {
-      child.state.should.equal('started')
+      child.currentState.should.equal('started')
     })
 
     describe('when restarting a user restart-able process', function () {
@@ -110,14 +108,12 @@ describe('Process transitions', function () {
 
       before(function (done) {
         child.once('restarting', function () {
-          transitionalState = child.state
+          transitionalState = child.previousState
         })
-
-        child
-          .start()
-          .then(function () {
-            done()
-          })
+        child.once('started', function () {
+          done()
+        })
+        handle.crash()
       })
 
       it('should restart the process (stop and start)', function () {
@@ -125,11 +121,11 @@ describe('Process transitions', function () {
       })
 
       it('should resolve to a started state', function () {
-        child.state.should.equal('started')
+        child.currentState.should.equal('started')
       })
 
-      it('should not increment exits', function () {
-        child.exits.should.equal(0)
+      it('should increment exits', function () {
+        child.exits.should.equal(1)
       })
     })
 
@@ -139,7 +135,7 @@ describe('Process transitions', function () {
       before(function (done) {
         child.config.restart = false
         child.once('restarting', function () {
-          transitionalState = child.state
+          transitionalState = child.currentState
         })
 
         child
@@ -154,7 +150,7 @@ describe('Process transitions', function () {
       })
 
       it('should stay in started', function () {
-        child.state.should.equal('started')
+        child.currentState.should.equal('started')
       })
 
       it('should not increment exits', function () {
@@ -163,15 +159,12 @@ describe('Process transitions', function () {
     })
 
     describe('when calling stop on a started process', function () {
-      before(function (done) {
-        child.once('exit', function () {
-          done()
-        })
-        child.stop()
+      before(function () {
+        return child.stop()
       })
 
       it('should resolve to a stopped state', function () {
-        child.state.should.equal('stopped')
+        child.currentState.should.equal('stopped')
       })
 
       it('should not increment exits', function () {
@@ -189,10 +182,10 @@ describe('Process transitions', function () {
     describe('when a process crashes', function () {
       let exit
       before(function (done) {
-        child.once('crashed', function (details) {
-          done()
+        child.once('exited', (topic, details) => {
           exit = details
-        })
+          done()
+        } )
         handle.crash()
       })
 
@@ -205,7 +198,7 @@ describe('Process transitions', function () {
       })
 
       it('should restart', function () {
-        child.state.should.equal('started')
+        child.currentState.should.equal('started')
       })
 
       after(function (done) {
@@ -230,7 +223,7 @@ describe('Process transitions', function () {
       })
 
       it('should resolve to a started state', function () {
-        child.state.should.equal('started')
+        child.currentState.should.equal('started')
       })
 
       it('should increment exits', function () {
@@ -259,7 +252,7 @@ describe('Process transitions', function () {
       })
 
       it('should end in a stopped state', function () {
-        child.state.should.equal('stopped')
+        child.currentState.should.equal('stopped')
 	  })
 	  
 	  after(function() {
